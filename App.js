@@ -1,4 +1,3 @@
-// App.js
 import React from 'react';
 import {
   Alert,
@@ -9,6 +8,8 @@ import {
   View,
 } from 'react-native';
 
+import * as Location from 'expo-location';
+
 import Status from './components/Status';
 import MessageList from './components/MessageList';
 import Toolbar from './components/Toolbar';
@@ -17,13 +18,11 @@ import * as MessageUtils from './utils/MessageUtils';
 export default class App extends React.Component {
   state = {
     messages: [
+      // Keep one sample location so you can compare with your real GPS pin later
+      MessageUtils.createLocationMessage({ latitude: 37.78825, longitude: -122.4324 }),
       MessageUtils.createImageMessage('https://unsplash.it/300/300'),
       MessageUtils.createTextMessage('World'),
       MessageUtils.createTextMessage('Hello'),
-      MessageUtils.createLocationMessage({
-        latitude: 37.78825,
-        longitude: -122.4324,
-      }),
     ],
     fullscreenImageId: null,
     isInputFocused: false,
@@ -35,7 +34,6 @@ export default class App extends React.Component {
       this.handleBackPress
     );
   }
-
   componentWillUnmount() {
     if (this.subscription) this.subscription.remove();
   }
@@ -49,13 +47,11 @@ export default class App extends React.Component {
     return false;
   };
 
-  dismissFullscreenImage = () => {
-    this.setState({ fullscreenImageId: null });
-  };
+  dismissFullscreenImage = () => this.setState({ fullscreenImageId: null });
 
   deleteMessage = (id) => {
     this.setState((state) => ({
-      messages: state.messages.filter((message) => message.id !== id),
+      messages: state.messages.filter((m) => m.id !== id),
     }));
   };
 
@@ -67,16 +63,12 @@ export default class App extends React.Component {
           'Are you sure you want to permanently delete this message?',
           [
             { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Delete',
-              style: 'destructive',
-              onPress: () => this.deleteMessage(id),
-            },
+            { text: 'Delete', style: 'destructive', onPress: () => this.deleteMessage(id) },
           ]
         );
         break;
       case 'image':
-        // Supplementary activity: also dismiss keyboard when opening fullscreen
+        // Close keyboard when opening fullscreen
         this.setState({ fullscreenImageId: id, isInputFocused: false });
         break;
       default:
@@ -84,10 +76,8 @@ export default class App extends React.Component {
     }
   };
 
-  // ==== Toolbar handlers ====
-  handleChangeFocus = (isInputFocused) => {
-    this.setState({ isInputFocused });
-  };
+  // === Toolbar handlers ===
+  handleChangeFocus = (isInputFocused) => this.setState({ isInputFocused });
 
   handleSubmit = (text) => {
     this.setState((state) => ({
@@ -96,44 +86,60 @@ export default class App extends React.Component {
   };
 
   handlePressToolbarCamera = () => {
-    // (Optional) add camera logic later
+    // Stub for future camera feature
     this.setState({ isInputFocused: false });
   };
 
-  handlePressToolbarLocation = () => {
-    // (Optional) add geolocation logic later
-    this.setState({ isInputFocused: false });
+  // Supplementary: Use Expo Location to add a live GPS pin
+  handlePressToolbarLocation = async () => {
+    try {
+      const { messages } = this.state;
+
+      // 1) Ask for permission
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission denied', 'Enable location permission to show your position.');
+        return;
+      }
+
+      // 2) Get current position
+      const pos = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
+      const { latitude, longitude } = pos.coords;
+
+      // 3) Prepend a new location message
+      this.setState({
+        messages: [
+          MessageUtils.createLocationMessage({ latitude, longitude }),
+          ...messages,
+        ],
+      });
+    } catch (err) {
+      Alert.alert('Location error', err?.message || 'Unable to get location.');
+    }
   };
-  // ==========================
+  // ========================
 
   renderMessageList() {
     const { messages } = this.state;
     return (
       <View style={styles.content}>
-        <MessageList
-          messages={messages}
-          onPressMessage={this.handlePressMessage}
-        />
+        <MessageList messages={messages} onPressMessage={this.handlePressMessage} />
       </View>
     );
   }
 
   renderFullscreenImage = () => {
     const { messages, fullscreenImageId } = this.state;
-
     if (!fullscreenImageId) return null;
 
     const image = messages.find((m) => m.id === fullscreenImageId);
     if (!image || image.type !== 'image') return null;
 
-    const { uri } = image;
-
     return (
-      <TouchableHighlight
-        style={styles.fullscreenOverlay}
-        onPress={this.dismissFullscreenImage}
-      >
-        <Image style={styles.fullscreenImage} source={{ uri }} />
+      <TouchableHighlight style={styles.fullscreenOverlay} onPress={this.dismissFullscreenImage}>
+        <Image style={styles.fullscreenImage} source={{ uri: image.uri }} />
       </TouchableHighlight>
     );
   };
@@ -166,31 +172,15 @@ export default class App extends React.Component {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: 'white',
-  },
-  content: {
-    flex: 2.5,
-    marginBottom: 40, // space before IME
-  },
+  container: { flex: 1, backgroundColor: 'white' },
+  content: { flex: 2.5, marginBottom: 40 },
   toolbarWrapper: {
     flex: 0.4,
     backgroundColor: 'white',
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: '#e8e8e8',
   },
-  inputMethodEditor: {
-    flex: 0.9,
-    backgroundColor: 'white',
-  },
-  fullscreenOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'black',
-    zIndex: 2,
-  },
-  fullscreenImage: {
-    flex: 1,
-    resizeMode: 'contain',
-  },
+  inputMethodEditor: { flex: 0.9, backgroundColor: 'white' },
+  fullscreenOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'black', zIndex: 2 },
+  fullscreenImage: { flex: 1, resizeMode: 'contain' },
 });
